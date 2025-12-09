@@ -41,8 +41,46 @@ def auth_required(func):
         4. Si coincide, ejecutar la función original
         5. Si no coincide o hay algún error, devolver un error 401 Unauthorized
         """
-        # TODO: Implementa la lógica del decorador según las instrucciones
-        pass
+        # 1. Extraer el token de la cabecera 'Authorization'
+        auth_header = request.headers.get('Authorization')
+        
+        # Verificar si la cabecera existe
+        if not auth_header:
+            return jsonify({
+                'error': 'Cabecera de autorización faltante',
+                'message': 'Se requiere el token de autenticación'
+            }), 401
+        
+        # 2. Verificar que el formato sea 'Bearer TOKEN'
+        try:
+            # Dividir el header en dos partes: 'Bearer' y el token
+            parts = auth_header.split()
+            
+            if len(parts) != 2 or parts[0].lower() != 'bearer':
+                return jsonify({
+                    'error': 'Formato de autorización inválido',
+                    'message': 'El formato debe ser: Bearer TOKEN'
+                }), 401
+            
+            token = parts[1]
+            
+            # 3. Comprobar que el token coincide con API_TOKEN
+            if token != API_TOKEN:
+                return jsonify({
+                    'error': 'Token inválido',
+                    'message': 'El token proporcionado no es válido'
+                }), 401
+            
+            # 4. Si coincide, ejecutar la función original
+            return func(*args, **kwargs)
+            
+        except Exception :
+            # 5. Si hay algún error, devolver un error 401 Unauthorized
+            return jsonify({
+                'error': 'Error en la autenticación',
+                'message': 'Error procesando la solicitud de autenticación'
+            }), 401
+        
     return decorated_function
 
 
@@ -95,8 +133,10 @@ def create_app():
                 "error": "Token inválido o ausente"
             }
         """
-        # TODO: Implementa este endpoint para devolver el mensaje secreto
-        pass
+        return jsonify({
+            "message": "¡Has accedido al secreto!",
+            "secret": "La respuesta a la vida, el universo y todo lo demás es 42"
+        })
 
     return app
 

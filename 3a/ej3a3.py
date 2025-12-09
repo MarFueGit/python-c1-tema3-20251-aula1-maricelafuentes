@@ -32,7 +32,11 @@ def conectar_bd() -> sqlite3.Connection:
     # 2. Conecta a la base de datos
     # 3. Configura la conexión para que devuelva las filas como diccionarios (opcional)
     # 4. Retorna la conexión
-    pass
+    if not os.path.exists(DB_PATH):
+        raise FileNotFoundError(f"La base de datos no existe en la ruta: {DB_PATH}")
+    conexion = sqlite3.connect(DB_PATH)
+    conexion.row_factory = sqlite3.Row
+    return conexion
 
 def convertir_a_json(conexion: sqlite3.Connection) -> Dict[str, List[Dict[str, Any]]]:
     """
@@ -54,7 +58,30 @@ def convertir_a_json(conexion: sqlite3.Connection) -> Dict[str, List[Dict[str, A
     #    c. Convierte cada fila a un diccionario (clave: nombre columna, valor: valor celda)
     #    d. Añade el diccionario a una lista para esa tabla
     # 4. Retorna el diccionario completo con todas las tablas
-    pass
+    resultado: Dict[str, List[Dict[str, Any]]] = {}
+    cursor = conexion.cursor()
+
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+    tablas = [t[0] for t in cursor.fetchall()]
+
+    for tabla in tablas:
+        # Obtener filas
+        cursor.execute(f"SELECT * FROM {tabla}")
+        filas = cursor.fetchall()
+
+        # Obtener nombres de columnas
+        colnames = [desc[0] for desc in cursor.description] if cursor.description else []
+
+        registros: List[Dict[str, Any]] = []
+        for fila in filas:
+            # fila es una tupla; convertir a dict
+            registro = {col: fila[idx] for idx, col in enumerate(colnames)}
+            registros.append(registro)
+
+        resultado[tabla] = registros
+
+    return resultado
+
 
 def convertir_a_dataframes(conexion: sqlite3.Connection) -> Dict[str, pd.DataFrame]:
     """
@@ -76,7 +103,57 @@ def convertir_a_dataframes(conexion: sqlite3.Connection) -> Dict[str, pd.DataFra
     #    - Ventas con información de vendedores
     #    - Vendedores con regiones
     # 5. Retorna el diccionario con todos los DataFrames
-    pass
+    dfs: Dict[str, pd.DataFrame] = {}
+    cursor = conexion.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+    tablas = [t[0] for t in cursor.fetchall()]
+
+    for tabla in tablas:
+        try:
+            df = pd.read_sql_query(f"SELECT * FROM {tabla}", conexion)
+        except Exception:
+            df = pd.DataFrame()
+        dfs[tabla] = df
+
+    # Añadir consultas combinadas relevantes
+    try:
+        dfs['ventas_productos'] = pd.read_sql_query(
+            """
+            SELECT ventas.*, productos.nombre AS producto_nombre, productos.categoria, productos.precio_unitario
+            FROM ventas
+            JOIN productos ON ventas.producto_id = productos.id
+            """,
+            conexion
+        )
+    except Exception:
+        pass
+
+    try:
+        dfs['ventas_vendedores'] = pd.read_sql_query(
+            """
+            SELECT ventas.*, vendedores.nombre AS vendedor_nombre, vendedores.region_id
+            FROM ventas
+            JOIN vendedores ON ventas.vendedor_id = vendedores.id
+            """,
+            conexion
+        )
+    except Exception:
+        pass
+
+    try:
+        dfs['vendedores_regiones'] = pd.read_sql_query(
+            """
+            SELECT vendedores.*, regiones.nombre AS region_nombre, regiones.pais
+            FROM vendedores
+            JOIN regiones ON vendedores.region_id = regiones.id
+            """,
+            conexion
+        )
+    except Exception:
+        pass
+
+    return dfs
+
 
 if __name__ == "__main__":
     try:

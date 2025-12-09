@@ -13,6 +13,9 @@ Tareas:
 Este ejercicio se enfoca en las operaciones básicas de SQL desde Python sin utilizar un ORM.
 """
 
+
+import sys
+import io
 import sqlite3
 import os
 
@@ -25,18 +28,43 @@ def crear_conexion():
     Crea y devuelve una conexión a la base de datos SQLite
     """
     # Implementa la creación de la conexión y retorna el objeto conexión
-    pass
+    try:
+        conexion = sqlite3.connect(DB_PATH)
+        conexion.execute("PRAGMA encoding = 'UTF-8';")  
+        return conexion
+    except sqlite3.Error as e:
+        print(f"Error al conectar: {e}")
+        return None
 
 def crear_tablas(conexion):
     """
     Crea las tablas necesarias para la biblioteca:
     - autores: id (entero, clave primaria), nombre (texto, no nulo)
     - libros: id (entero, clave primaria), titulo (texto, no nulo),
-              anio (entero), autor_id (entero, clave foránea a autores.id)
+            anio (entero), autor_id (entero, clave foránea a autores.id)
     """
     # Implementa la creación de tablas usando SQL
     # Usa conexion.cursor() para crear un cursor y ejecutar comandos SQL
-    pass
+    cursor = conexion.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS autores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL
+        );
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS libros (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            titulo TEXT NOT NULL,
+            anio INTEGER NOT NULL,
+            autor_id INTEGER NOT NULL,
+            FOREIGN KEY (autor_id) REFERENCES autores(id)
+        );
+    """)
+
+    conexion.commit()
 
 def insertar_autores(conexion, autores):
     """
@@ -45,7 +73,9 @@ def insertar_autores(conexion, autores):
     """
     # Implementa la inserción de autores usando SQL INSERT
     # Usa consultas parametrizadas para mayor seguridad
-    pass
+    cursor = conexion.cursor()
+    cursor.executemany("INSERT INTO autores (nombre) VALUES (?)", autores)
+    conexion.commit()
 
 def insertar_libros(conexion, libros):
     """
@@ -54,7 +84,9 @@ def insertar_libros(conexion, libros):
     """
     # Implementa la inserción de libros usando SQL INSERT
     # Usa consultas parametrizadas para mayor seguridad
-    pass
+    cursor = conexion.cursor()
+    cursor.executemany("INSERT INTO libros (titulo, anio, autor_id) VALUES (?, ?, ?)", libros)
+    conexion.commit()
 
 def consultar_libros(conexion):
     """
@@ -62,7 +94,20 @@ def consultar_libros(conexion):
     """
     # Implementa una consulta SQL JOIN para obtener libros con sus autores
     # Imprime los resultados formateados
-    pass
+    cursor = conexion.cursor()
+    # Unir tablas libros y autores para obtener el nombre del autor
+    cursor.execute(
+        """
+        SELECT libros.titulo, autores.nombre, libros.anio
+        FROM libros
+        JOIN autores ON libros.autor_id = autores.id
+        ORDER BY libros.id
+        """
+    )
+    libros = cursor.fetchall()
+
+    for titulo, autor, anio in libros:
+        print(f"{titulo} - {autor} - {anio}")
 
 def buscar_libros_por_autor(conexion, nombre_autor):
     """
@@ -70,7 +115,19 @@ def buscar_libros_por_autor(conexion, nombre_autor):
     """
     # Implementa una consulta SQL con WHERE para filtrar por autor
     # Retorna una lista de tuplas (titulo, anio)
-    pass
+    cursor = conexion.cursor()
+    # Buscar libros haciendo JOIN con autores y filtrando por nombre
+    cursor.execute(
+        """
+        SELECT libros.titulo, libros.anio
+        FROM libros
+        JOIN autores ON libros.autor_id = autores.id
+        WHERE autores.nombre = ?
+        ORDER BY libros.id
+        """,
+        (nombre_autor,)
+    )
+    return cursor.fetchall()
 
 def actualizar_libro(conexion, id_libro, nuevo_titulo=None, nuevo_anio=None):
     """
@@ -78,25 +135,62 @@ def actualizar_libro(conexion, id_libro, nuevo_titulo=None, nuevo_anio=None):
     """
     # Implementa la actualización usando SQL UPDATE
     # Solo actualiza los campos que no son None
-    pass
+    cursor = conexion.cursor()
+
+    if nuevo_titulo is not None and nuevo_anio is not None:
+        cursor.execute("""
+            UPDATE libros
+            SET titulo = ?, anio = ?
+            WHERE id = ?;
+        """, (nuevo_titulo, nuevo_anio, id_libro))
+
+    elif nuevo_titulo is not None:
+        cursor.execute("""
+            UPDATE libros
+            SET titulo = ?
+            WHERE id = ?;
+        """, (nuevo_titulo, id_libro))
+
+    elif nuevo_anio is not None:
+        cursor.execute("""
+            UPDATE libros
+            SET anio = ?
+            WHERE id = ?;
+        """, (nuevo_anio, id_libro))
+
+    conexion.commit()
 
 def eliminar_libro(conexion, id_libro):
     """
     Elimina un libro por su ID
     """
     # Implementa la eliminación usando SQL DELETE
-    pass
+    cursor = conexion.cursor()
+    cursor.execute("DELETE FROM libros WHERE id = ?", (id_libro,))
+    conexion.commit()
 
 def ejemplo_transaccion(conexion):
     """
     Demuestra el uso de transacciones para operaciones agrupadas
     """
-    # Implementa una transacción que:
-    # 1. Comience con conexion.execute("BEGIN TRANSACTION")
-    # 2. Realice varias operaciones
-    # 3. Si todo está bien, confirma con conexion.commit()
-    # 4. En caso de error, revierte con conexion.rollback()
-    pass
+    
+    try:
+        conexion.execute("BEGIN TRANSACTION")
+        cursor = conexion.cursor()
+
+        # Insertar autor y usar su id para el libro (evita suponer id = 1)
+        cursor.execute("INSERT INTO autores (nombre) VALUES (?)", ("Autor transacción",))
+        autor_id = cursor.lastrowid
+        cursor.execute(
+            "INSERT INTO libros (titulo, anio, autor_id) VALUES (?, ?, ?)",
+            ("Libro TX", 2025, autor_id)
+        )
+
+        conexion.commit()
+
+    except sqlite3.Error:
+        conexion.rollback()
+        print("Transacción revertida por error")
 
 if __name__ == "__main__":
     try:

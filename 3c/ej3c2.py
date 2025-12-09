@@ -13,6 +13,7 @@ Esta versión utiliza Flask para crear la API REST y PyJWT para trabajar con tok
 """
 
 import datetime
+import token
 import jwt
 from flask import Flask, jsonify, request
 from functools import wraps
@@ -36,13 +37,23 @@ def generate_jwt_token(username):
     Returns:
         str: Token JWT generado
     """
-    # TODO: Implementa este método para generar un token JWT usando la biblioteca PyJWT
-    # El token debe incluir:
-    # - 'sub' (subject): username
-    # - 'iat' (issued at): Tiempo de emisión
-    # - 'exp' (expiration): Tiempo de expiración
-    # Usa JWT_SECRET_KEY para firmar el token
-    pass
+   
+    # Use timezone-aware UTC datetimes to avoid deprecation warnings
+    now = datetime.datetime.now(datetime.timezone.utc)
+    # Set iat a 1 segundo en el pasado para evitar errores por pequeña deriva de tiempo
+    iat = int(now.timestamp()) - 1
+    exp_dt = now + JWT_EXPIRATION_DELTA
+    exp = int(exp_dt.timestamp())
+    payload = {
+        'sub': username,
+        'iat': iat,
+        'exp': exp
+    }
+    token = jwt.encode(payload, JWT_SECRET_KEY, algorithm='HS256')
+    # jwt.encode may return bytes in some versions
+    if isinstance(token, bytes):
+        token = token.decode('utf-8')
+    return token
 
 def jwt_required(func):
     """
@@ -66,11 +77,26 @@ def jwt_required(func):
         3. Decodificar y verificar el token usando jwt.decode()
         4. Si hay algún error (token expirado, inválido, etc.), devolver un error apropiado
         """
-        # TODO: Implementa la lógica del decorador según las instrucciones
-        pass
+        auth_header = request.headers.get('Authorization')
+        if not auth_header:
+            return jsonify({'error': 'Token inválido '}), 401
+
+        parts = auth_header.split()
+        if len(parts) != 2 or parts[0].lower() != 'bearer':
+            return jsonify({'error': 'Token inválido '}), 401
+
+        token = parts[1]
+        try:
+            decoded = jwt.decode(token, JWT_SECRET_KEY, algorithms=['HS256'])
+            # attach user info if needed
+            request.jwt_payload = decoded
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expirado'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Token inválido o ausente'}), 401
+
+        return func(*args, **kwargs)
     return decorated_function
-
-
 def create_app():
     """
     Crea y configura la aplicación Flask
@@ -125,8 +151,26 @@ def create_app():
                 "error": "Credenciales inválidas"
             }
         """
-        # TODO: Implementa este endpoint según las instrucciones
-        pass
+        
+        
+        data = request.get_json() or {}
+        username = data.get('username')
+        password = data.get('password')
+
+        if not username or not password:
+            return jsonify({'error': 'Credenciales inválidas'}), 401
+
+        expected = USER_CREDENTIALS.get(username)
+        if expected is None or expected != password:
+            return jsonify({'error': 'Credenciales inválidas'}), 401
+
+        token = generate_jwt_token(username)
+    
+        # Calcular expires_at ISO format (sin usar métodos deprecados)
+        exp_ts = jwt.decode(token, JWT_SECRET_KEY, algorithms=['HS256'], options={"verify_exp": False}).get('exp')
+    
+        expires_at = datetime.datetime.fromtimestamp(exp_ts, tz=datetime.timezone.utc).isoformat()
+        return jsonify({'token': token, 'expires_at': expires_at})
 
     @app.route('/api/secret', methods=['GET'])
     @jwt_required
@@ -153,8 +197,10 @@ def create_app():
                 "error": "Token inválido o ausente"
             }
         """
-        # TODO: Implementa este endpoint según las instrucciones
-        pass
+        return jsonify({
+            'message': '¡Has accedido al secreto con JWT!',
+            'secret': 'La respuesta a la vida, el universo y todo lo demás es 42'
+        })
 
     return app
 

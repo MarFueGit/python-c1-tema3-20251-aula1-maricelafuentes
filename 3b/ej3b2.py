@@ -18,7 +18,7 @@ Libros:
 Esta versión utiliza Flask-SQLAlchemy como ORM para persistir los datos en una base de datos SQLite.
 """
 
-from flask import Flask, jsonify, request
+from flask import Flask, abort, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
@@ -31,38 +31,42 @@ class Author(db.Model):
     Modelo de autor usando SQLAlchemy ORM
     Debe tener: id, name y una relación con los libros
     """
-    # Define la tabla 'authors' con:
-    # - __tablename__ para especificar el nombre de la tabla
-    # - id: clave primaria autoincremental
-    # - name: nombre del autor (obligatorio)
-    # - Una relación con los libros usando db.relationship
-    pass
+    __tablename__ = 'authors'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String, nullable=False)
+
+    books = db.relationship('Book', backref='author', cascade='all, delete-orphan')
 
     def to_dict(self):
         """Convierte el autor a un diccionario para la respuesta JSON"""
-        # Implementa este método para devolver id y name
-        # No incluyas la lista de libros para evitar recursión infinita
-        pass
 
+        return {
+            'id': self.id,
+            'name': self.name
+        }
 
 class Book(db.Model):
     """
     Modelo de libro usando SQLAlchemy ORM
     Debe tener: id, title, year (opcional), author_id y relación con el autor
     """
-    # Define la tabla 'books' con:
-    # - __tablename__ para especificar el nombre de la tabla
-    # - id: clave primaria autoincremental
-    # - title: título del libro (obligatorio)
-    # - year: año de publicación (opcional)
-    # - author_id: clave foránea que relaciona con la tabla 'authors'
-    pass
+    __tablename__ = 'books'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    title = db.Column(db.String, nullable=False)
+    year = db.Column(db.Integer, nullable=True)
+    author_id = db.Column(db.Integer, db.ForeignKey('authors.id'), nullable=False)
 
     def to_dict(self):
         """Convierte el libro a un diccionario para la respuesta JSON"""
-        # Implementa este método para devolver id, title, year y author_id
-        pass
-
+        
+        return {
+            'id': self.id,
+            'title': self.title,
+            'year': self.year,
+            'author_id': self.author_id
+        }
 
 def create_app():
     """
@@ -81,17 +85,15 @@ def create_app():
     with app.app_context():
         db.create_all()
     
+    
     # Endpoints de Autores
     @app.route('/authors', methods=['GET'])
     def get_authors():
         """
         Devuelve la lista completa de autores
         """
-        # Implementa este endpoint:
-        # - Consulta todos los autores
-        # - Convierte cada autor a diccionario usando to_dict()
-        # - Devuelve la lista en formato JSON
-        pass
+        authors = Author.query.order_by(Author.id).all()
+        return jsonify([a.to_dict() for a in authors])
 
     @app.route('/authors', methods=['POST'])
     def add_author():
@@ -99,22 +101,28 @@ def create_app():
         Agrega un nuevo autor
         El cuerpo de la solicitud debe incluir un JSON con el campo "name"
         """
-        # Implementa este endpoint:
-        # - Obtiene los datos JSON de la solicitud
-        # - Crea un nuevo autor con el nombre proporcionado
-        # - Lo guarda en la base de datos
-        # - Devuelve el autor creado con código 201
-        pass
+        data = request.get_json() or {}
+        name = data.get('name')
+        if not name:
+            return jsonify({'error': 'Missing name'}), 400
+
+        author = Author(name=name)
+        db.session.add(author)
+        db.session.commit()
+        return jsonify(author.to_dict()), 201
 
     @app.route('/authors/<int:author_id>', methods=['GET'])
     def get_author(author_id):
         """
         Obtiene los detalles de un autor específico y su lista de libros
         """
-        # Implementa este endpoint:
-        # - Busca el autor por ID (usa get_or_404 para gestionar el error 404)
-        # - Devuelve los detalles del autor y su lista de libros
-        pass
+        author = Author.query.get_or_404(author_id)
+        # Obtener libros del autor
+        books = [b.to_dict() for b in Book.query.filter_by(author_id=author.id).order_by(Book.id).all()]
+        result = author.to_dict()
+        result['books'] = books
+        return jsonify(result)
+
 
     # Endpoints de Libros
     @app.route('/books', methods=['GET'])
@@ -122,11 +130,8 @@ def create_app():
         """
         Devuelve la lista completa de libros
         """
-        # Implementa este endpoint:
-        # - Consulta todos los libros
-        # - Convierte cada libro a diccionario
-        # - Devuelve la lista en formato JSON
-        pass
+        books = Book.query.order_by(Book.id).all()
+        return jsonify([b.to_dict() for b in books])
 
     @app.route('/books', methods=['POST'])
     def add_book():
@@ -134,33 +139,43 @@ def create_app():
         Agrega un nuevo libro
         El cuerpo de la solicitud debe incluir JSON con campos "title", "author_id", y "year" (opcional)
         """
-        # Implementa este endpoint:
-        # - Obtiene los datos JSON de la solicitud
-        # - Crea un nuevo libro con título, autor_id y año (opcional)
-        # - Lo guarda en la base de datos
-        # - Devuelve el libro creado con código 201
-        pass
+        data = request.get_json() or {}
+        title = data.get('title')
+        author_id = data.get('author_id')
+        year = data.get('year')
 
+        if not title or author_id is None:
+            return jsonify({'error': 'Missing title or author_id'}), 400
+
+        # Verificar que el autor existe
+        author = Author.query.get(author_id)
+        if not author:
+            return jsonify({'error': 'Author not found'}), 400
+
+        book = Book(title=title, year=year, author_id=author_id)
+        db.session.add(book)
+        db.session.commit()
+        return jsonify(book.to_dict()), 201
+    
     @app.route('/books/<int:book_id>', methods=['GET'])
     def get_book(book_id):
         """
         Obtiene un libro específico por su ID
         """
-        # Implementa este endpoint:
-        # - Busca el libro por ID (usa get_or_404 para gestionar el error 404)
-        # - Devuelve los detalles del libro
-        pass
-
+        book = Book.query.get_or_404(book_id)
+        return jsonify(book.to_dict())
+    
     @app.route('/books/<int:book_id>', methods=['DELETE'])
     def delete_book(book_id):
         """
         Elimina un libro específico por su ID
         """
-        # Implementa este endpoint:
-        # - Busca el libro por ID (usa get_or_404)
-        # - Elimina el libro de la base de datos
-        # - Devuelve respuesta vacía con código 204
-        pass
+        book = Book.query.get(book_id)
+        if not book:
+            return jsonify({'error': 'Not found'}), 404
+        db.session.delete(book)
+        db.session.commit()
+        return ('', 204)
 
     @app.route('/books/<int:book_id>', methods=['PUT'])
     def update_book(book_id):
@@ -168,15 +183,25 @@ def create_app():
         Actualiza la información de un libro existente
         El cuerpo puede incluir "title" y/o "year"
         """
-        # Implementa este endpoint:
-        # - Obtiene los datos JSON de la solicitud
-        # - Busca el libro por ID (usa get_or_404)
-        # - Actualiza los campos proporcionados (título y/o año)
-        # - Guarda los cambios en la base de datos
-        # - Devuelve el libro actualizado
-        pass
+        data = request.get_json() or {}
+        book = Book.query.get(book_id)
+        if not book:
+            return jsonify({'error': 'Not found'}), 404
+
+        title = data.get('title')
+        year = data.get('year')
+
+        if title is not None:
+            book.title = title
+        if year is not None:
+            book.year = year
+
+        db.session.add(book)
+        db.session.commit()
+        return jsonify(book.to_dict())
 
     return app
+
 
 if __name__ == '__main__':
     app = create_app()

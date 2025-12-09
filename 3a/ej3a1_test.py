@@ -23,18 +23,27 @@ def conexion():
 @pytest.fixture
 def db_con_tablas(conexion):
     """Fixture que proporciona una conexión con las tablas ya creadas"""
-    # Execute the SQL script to create tables (without revealing implementation)
-    with open(SQL_TEST_PATH, 'r') as sql_file:
-        # Read only the CREATE TABLE statements
-        sql_script = ""
+
+    sql_script = ""
+    capturando = False
+
+    with open(SQL_TEST_PATH, 'r', encoding='utf-8') as sql_file:
         for line in sql_file:
-            if line.strip().startswith('CREATE TABLE'):
+            stripped = line.strip()
+
+            # Inicia captura cuando aparece CREATE TABLE
+            if stripped.startswith('CREATE TABLE'):
+                capturando = True
+
+            # Si estamos capturando y la línea no es un INSERT, agregarla
+            if capturando and not stripped.startswith('INSERT'):
                 sql_script += line
-            elif sql_script and not line.strip().startswith('INSERT'):
-                sql_script += line
-            if line.strip() == ');' and 'libros' in sql_script:
+
+            # Termina captura cuando cierra la tabla 'libros'
+            if stripped == ');' and 'libros' in sql_script:
                 break
 
+    # Ejecutar script
     conexion.executescript(sql_script)
     conexion.commit()
     return conexion
@@ -43,9 +52,8 @@ def db_con_tablas(conexion):
 def db_con_datos(conexion):
     """Fixture que proporciona una conexión con tablas y datos de ejemplo"""
     # Execute the entire SQL script to setup tables and data
-    with open(SQL_TEST_PATH, 'r') as sql_file:
+    with open(SQL_TEST_PATH, 'r', encoding='utf-8') as sql_file:
         conexion.executescript(sql_file.read())
-
     conexion.commit()
     return conexion
 

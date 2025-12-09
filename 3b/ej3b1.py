@@ -13,9 +13,8 @@ Implementa un sistema simple de gestión de biblioteca utilizando SQLAlchemy par
 Este ejercicio se enfoca en SQLAlchemy Core y ORM sin depender de Flask u otro framework web.
 """
 
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Table, inspect
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship, joinedload
+from sqlalchemy import create_engine, Column, Integer, String, ForeignKey
+from sqlalchemy.orm import declarative_base, relationship, sessionmaker, joinedload
 
 # Crea el motor de base de datos (usamos SQLite en memoria para simplificar)
 engine = create_engine('sqlite:///:memory:', echo=True)
@@ -30,39 +29,62 @@ Base = declarative_base()
 # 2. Un modelo Book (libro) con campos id, title (título), year (año, opcional) y una relación con Author
 
 class Author(Base):
-    # Define la tabla 'authors' con:
-    # - __tablename__ para especificar el nombre de la tabla
+     # Define la tabla 'authors' con:
+    __tablename__ = "authors"
+
     # - id: clave primaria autoincremental
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
     # - name: nombre del autor (obligatorio)
+    name = Column(String, nullable=False)
+
     # - Una relación con los libros (books) usando relationship
-    pass
+    books = relationship("Book", back_populates="author", cascade="all, delete")
+
 
 
 class Book(Base):
     # Define la tabla 'books' con:
-    # - __tablename__ para especificar el nombre de la tabla
+    __tablename__ = "books"
+
     # - id: clave primaria autoincremental
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
     # - title: título del libro (obligatorio)
+    title = Column(String, nullable=False)
+
     # - year: año de publicación (opcional)
+    year = Column(Integer)
+
     # - author_id: clave foránea que relaciona con la tabla 'authors'
+    author_id = Column(Integer, ForeignKey("authors.id"))
+
     # - Una relación con el autor usando relationship
-    pass
+    author = relationship("Author", back_populates="books")
 
 
 # Función para configurar la base de datos
 def setup_database():
     """Configura la base de datos y crea las tablas"""
     # Implementa la creación de tablas en la base de datos usando Base.metadata.create_all()
-    pass
+    Base.metadata.create_all(engine)
 
 
 # Función para crear datos de ejemplo
 def create_sample_data(session):
     """Crea datos de ejemplo en la base de datos"""
     # Crea al menos dos autores
+    a1 = Author(name="Autor A")
+    a2 = Author(name="Autor B")
+
     # Crea al menos tres libros asociados a los autores
+    b1 = Book(title="Libro 1", year=1990, author=a1)
+    b2 = Book(title="Libro 2", year=1995, author=a1)
+    b3 = Book(title="Libro 3", year=2000, author=a2)
+
     # Añade todos los objetos a la sesión y haz commit
-    pass
+    session.add_all([a1, a2, b1, b2, b3])
+    session.commit()
 
 
 # Funciones para operaciones CRUD
@@ -72,49 +94,84 @@ def create_book(session, title, author_name, year=None):
     Si el autor ya existe, se utiliza el existente
     """
     # Busca si ya existe un autor con ese nombre
+    author = session.query(Author).filter_by(name=author_name).first()
+
     # Si no existe, crea un nuevo autor
+    if not author:
+        author = Author(name=author_name)
+        session.add(author)
+        session.commit()
+
     # Crea un nuevo libro asociado al autor
+    book = Book(title=title, year=year, author=author)
+
     # Añade y haz commit a la sesión
+    session.add(book)
+    session.commit()
+
     # Retorna el libro creado
-    pass
+    return book
+
 
 
 def get_all_books(session):
     """Obtiene todos los libros con sus autores"""
     # Consulta todos los libros y carga también los autores (joinedload)
-    # Retorna la lista de libros
-    pass
+    return session.query(Book).options(joinedload(Book.author)).all()
 
 
 def get_book_by_id(session, book_id):
     """Obtiene un libro específico por su ID"""
     # Busca un libro por su ID y retórnalo
     # Si no existe, retorna None
-    pass
+    return session.query(Book).filter_by(id=book_id).first()
 
 
 def update_book(session, book_id, new_title=None, new_year=None):
     """Actualiza la información de un libro existente"""
     # Busca el libro por ID
+    book = session.query(Book).filter_by(id=book_id).first()
+
     # Si existe, actualiza los campos que tienen nuevos valores
+    if not book:
+        return None
+
+    if new_title:
+        book.title = new_title
+    if new_year:
+        book.year = new_year
+
     # Haz commit a la sesión
+    session.commit()
+
     # Retorna el libro actualizado o None si no existe
-    pass
+    return book
+
 
 
 def delete_book(session, book_id):
     """Elimina un libro de la base de datos"""
     # Busca el libro por ID
+    book = session.query(Book).filter_by(id=book_id).first()
+
     # Si existe, elimínalo y haz commit
-    pass
+    if book:
+        session.delete(book)
+        session.commit()
 
 
 def find_books_by_author(session, author_name):
     """Busca libros por el nombre del autor"""
-    # Consulta los libros uniendo (join) con la tabla de autores
+     # Consulta los libros uniendo (join) con la tabla de autores
     # Filtra por el nombre del autor
     # Retorna la lista de libros
-    pass
+    return (
+        session.query(Book)
+        .join(Author)
+        .filter(Author.name == author_name)
+        .all()
+    )
+
 
 
 # Función principal para demostrar el uso de SQLAlchemy

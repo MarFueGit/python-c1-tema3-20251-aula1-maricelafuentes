@@ -243,3 +243,4 @@ fabric.properties
 *.DS_Store*
 .python-version
 *myenv*
+venv/
